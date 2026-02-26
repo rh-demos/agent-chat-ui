@@ -11,6 +11,7 @@
         <div class="chat-header">
             <h1>LangGraph Chat Assistant</h1>
             <p class="subtitle">Ask questions about customers, orders, and invoices</p>
+            <button id="resetButton" title="Reset conversation">Reset</button>
         </div>
 
         <div class="chat-messages" id="chatMessages">
@@ -39,6 +40,9 @@
                 >
                 <button type="submit" id="sendButton">
                     <span>Send</span>
+                </button>
+                <button type="button" id="stopButton" style="display:none;">
+                    <span>Stop</span>
                 </button>
             </form>
         </div>
