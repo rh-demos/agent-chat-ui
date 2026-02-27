@@ -10,16 +10,31 @@ const FASTAPI_URL = process.env.FASTAPI_URL || 'http://localhost:8000';
 app.use(express.json());
 app.use(express.static('public'));
 
+// API endpoint to list available models from FastAPI
+app.get('/api/models', async (req, res) => {
+    try {
+        const response = await axios.get(`${FASTAPI_URL}/models`, { timeout: 10000 });
+        res.json(response.data);
+    } catch (error) {
+        console.error('Error fetching models:', error.message);
+        if (error.code === 'ECONNREFUSED') {
+            res.status(503).json({ error: 'Cannot connect to FastAPI backend', models: [], default_model: '' });
+        } else {
+            res.status(500).json({ error: 'Failed to fetch models', models: [], default_model: '' });
+        }
+    }
+});
+
 // API endpoint to proxy SSE stream from FastAPI
 app.get('/api/question', async (req, res) => {
-    const { q } = req.query;
+    const { q, model } = req.query;
 
     if (!q) {
         return res.status(400).json({ error: 'Question parameter "q" is required' });
     }
 
     try {
-        console.log(`Forwarding question to FastAPI (stream): ${q}`);
+        console.log(`Forwarding question to FastAPI (stream): ${q} [model: ${model || 'default'}]`);
 
         // Set SSE headers
         res.setHeader('Content-Type', 'text/event-stream');
@@ -28,10 +43,13 @@ app.get('/api/question', async (req, res) => {
         res.setHeader('X-Accel-Buffering', 'no');
         res.flushHeaders();
 
+        const params = { q };
+        if (model) params.model = model;
+
         const response = await axios({
             method: 'get',
             url: `${FASTAPI_URL}/question`,
-            params: { q },
+            params,
             responseType: 'stream',
             timeout: 120000
         });

@@ -4,10 +4,105 @@ const messageInput = document.getElementById('messageInput');
 const sendButton = document.getElementById('sendButton');
 const stopButton = document.getElementById('stopButton');
 const resetButton = document.getElementById('resetButton');
+const modelSelect = document.getElementById('modelSelect');
 
 // Active stream reader – set during streaming so Stop can cancel it
 let activeReader = null;
 let streamStopped = false;
+let selectedModel = '';
+
+const welcomeHTML =
+    '<div class="message bot-message">' +
+        '<div class="message-content">' +
+            '<p>Hello! I\'m your AI assistant. I can help you with:</p>' +
+            '<ul>' +
+                '<li>Finding customer information</li>' +
+                '<li>Looking up orders</li>' +
+                '<li>Checking invoices</li>' +
+                '<li>Answering general questions</li>' +
+            '</ul>' +
+            '<p>What would you like to know?</p>' +
+        '</div>' +
+    '</div>';
+
+// ── Model loading ────────────────────────────────────────────────────
+
+async function loadModels() {
+    try {
+        const response = await fetch('/api/models');
+        if (!response.ok) throw new Error('Failed to fetch models');
+        const data = await response.json();
+
+        modelSelect.innerHTML = '';
+
+        if (!data.models || data.models.length === 0) {
+            modelSelect.innerHTML = '<option value="">No models available</option>';
+            return;
+        }
+
+        // Sort: default model first, then alphabetically
+        const models = data.models.sort((a, b) => {
+            if (a.identifier === data.default_model) return -1;
+            if (b.identifier === data.default_model) return 1;
+            return a.identifier.localeCompare(b.identifier);
+        });
+
+        models.forEach(m => {
+            const option = document.createElement('option');
+            option.value = m.identifier;
+            option.textContent = m.identifier;
+            if (m.identifier === data.default_model) {
+                option.textContent += ' (default)';
+            }
+            modelSelect.appendChild(option);
+        });
+
+        // Restore previously selected model from localStorage, or use first (default)
+        const saved = localStorage.getItem('selectedModel');
+        if (saved && models.some(m => m.identifier === saved)) {
+            modelSelect.value = saved;
+            selectedModel = saved;
+        } else {
+            selectedModel = models[0].identifier;
+            modelSelect.value = selectedModel;
+        }
+    } catch (e) {
+        console.error('Failed to load models:', e);
+        modelSelect.innerHTML = '<option value="">Failed to load models</option>';
+    }
+}
+
+modelSelect.addEventListener('change', () => {
+    const newModel = modelSelect.value;
+    if (newModel === selectedModel) return;
+
+    selectedModel = newModel;
+    localStorage.setItem('selectedModel', selectedModel);
+
+    // Cancel any active stream
+    if (activeReader) {
+        activeReader.cancel();
+        activeReader = null;
+    }
+
+    // Clear conversation and show model-switch notice
+    chatMessages.innerHTML = welcomeHTML;
+    const noticeDiv = document.createElement('div');
+    noticeDiv.className = 'message bot-message';
+    noticeDiv.innerHTML =
+        `<div class="message-content"><em>Switched to model: <strong>${escapeHtml(selectedModel)}</strong>. Conversation has been reset.</em></div>`;
+    chatMessages.appendChild(noticeDiv);
+    scrollToBottom();
+
+    // Reset input state
+    messageInput.disabled = false;
+    messageInput.value = '';
+    stopButton.style.display = 'none';
+    sendButton.style.display = '';
+    messageInput.focus();
+});
+
+loadModels();
 
 // ── Multi-round thinking parser ──────────────────────────────────────
 
@@ -296,7 +391,9 @@ function scrollToBottom() {
 // ── SSE stream consumer ──────────────────────────────────────────────
 
 async function sendMessageStream(message, callbacks) {
-    const response = await fetch(`/api/question?q=${encodeURIComponent(message)}`);
+    let url = `/api/question?q=${encodeURIComponent(message)}`;
+    if (selectedModel) url += `&model=${encodeURIComponent(selectedModel)}`;
+    const response = await fetch(url);
 
     if (!response.ok) {
         let errorMsg = 'Failed to get response';
@@ -452,20 +549,6 @@ stopButton.addEventListener('click', () => {
 });
 
 // ── Reset button handler ────────────────────────────────────────────
-
-const welcomeHTML =
-    '<div class="message bot-message">' +
-        '<div class="message-content">' +
-            '<p>Hello! I\'m your AI assistant. I can help you with:</p>' +
-            '<ul>' +
-                '<li>Finding customer information</li>' +
-                '<li>Looking up orders</li>' +
-                '<li>Checking invoices</li>' +
-                '<li>Answering general questions</li>' +
-            '</ul>' +
-            '<p>What would you like to know?</p>' +
-        '</div>' +
-    '</div>';
 
 resetButton.addEventListener('click', () => {
     // Cancel any active stream
